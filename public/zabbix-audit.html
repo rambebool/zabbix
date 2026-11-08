@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Аудит шаблона windows_custom (Zabbix 8.0 LTS) — Интерактивный</title>
+<style>
+  * { box-sizing: border-box; }
+  body{font-family:'Segoe UI',Tahoma,sans-serif;margin:24px;color:#222;background:#f7f9fc}
+  h1{font-size:22px} h2{font-size:17px;margin:28px 0 8px;color:#1e88e5}
+  .meta{color:#667;font-size:12px}
+  .flags{background:#fff3cd;border:1px solid #ffe08a;border-radius:8px;padding:12px 16px;font-size:13px;margin:16px 0}
+  .flags li{margin:4px 0}
+  .summary{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}
+  .card{background:#fff;border:1px solid #dde;border-radius:8px;padding:10px 16px;font-size:13px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+  .card b{font-size:18px;display:block}
+  table{border-collapse:collapse;width:100%;background:#fff;font-size:12px;box-shadow:0 1px 4px rgba(0,0,0,.1)}
+  th{background:#2c3e50;color:#fff;padding:6px 8px;text-align:left;position:sticky;top:0;z-index:10}
+  td{padding:5px 8px;border-bottom:1px solid #e8ecf1;vertical-align:top}
+  tr:nth-child(even) td{background:#f6f9fd}
+  tr.grp td{background:linear-gradient(90deg,#e3f2fd,#bbdefb);font-weight:700;color:#0d47a1;cursor:pointer}
+  .key{font-family:Consolas,monospace;font-size:11px;word-break:break-all;color:#455}
+  .on{background:#e6f4ea;color:#1e7e34;border:1px solid #b7dfc0;border-radius:10px;padding:1px 8px;font-size:11px;white-space:nowrap;cursor:pointer;user-select:none;transition:all .15s}
+  .on:hover{background:#c8e6c9;transform:scale(1.05)}
+  .off{background:#fdecea;color:#b02a37;border:1px solid #f5c2c7;border-radius:10px;padding:1px 8px;font-size:11px;white-space:nowrap;cursor:pointer;user-select:none;transition:all .15s}
+  .off:hover{background:#f8d7da;transform:scale(1.05)}
+  .dep{color:#1565c0;font-size:11px} .master{color:#6a1b9a;font-size:11px;font-weight:700}
+  .trg{color:#b26a00;font-size:11px}
+  .legend{font-size:12px;color:#556;margin:10px 0}
+  .toolbar{display:flex;gap:10px;margin:16px 0;flex-wrap:wrap;align-items:center}
+  .toolbar input[type=text]{padding:6px 12px;border:1px solid #ccc;border-radius:6px;font-size:13px;min-width:250px}
+  .toolbar select{padding:6px 10px;border:1px solid #ccc;border-radius:6px;font-size:13px}
+  .btn{padding:6px 14px;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:500;transition:all .15s}
+  .btn:hover{opacity:.9;transform:translateY(-1px)}
+  .btn-add{background:#2e7d32;color:#fff}
+  .btn-reset{background:#6c757d;color:#fff}
+  .btn-export{background:#1565c0;color:#fff}
+  .btn-import{background:#6a1b9a;color:#fff}
+  .btn-del{background:none;border:none;color:#c62828;cursor:pointer;font-size:14px;padding:2px 6px;border-radius:4px}
+  .btn-del:hover{background:#ffebee}
+  .btn-edit{background:none;border:none;color:#1565c0;cursor:pointer;font-size:14px;padding:2px 6px;border-radius:4px}
+  .btn-edit:hover{background:#e3f2fd}
+
+  /* Modal */
+  .modal-overlay{display:none;position:fixed;z-index:1000;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,.5);justify-content:center;align-items:center}
+  .modal-overlay.active{display:flex}
+  .modal{background:#fff;border-radius:12px;padding:24px;width:90%;max-width:600px;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+  .modal h3{margin:0 0 16px;font-size:18px}
+  .form-group{margin-bottom:12px}
+  .form-group label{display:block;margin-bottom:4px;font-weight:600;font-size:13px;color:#333}
+  .form-group input,.form-group select,.form-group textarea{width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px}
+  .form-group textarea{resize:vertical;min-height:60px}
+  .form-row{display:flex;gap:12px}
+  .form-row .form-group{flex:1}
+  .checkbox-row{display:flex;gap:20px;margin:12px 0;flex-wrap:wrap}
+  .checkbox-row label{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:normal;cursor:pointer}
+  .modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:20px}
+
+  /* Inline edit */
+  .note-edit{border:1px dashed #1565c0;border-radius:4px;padding:2px 4px;outline:none;background:#fffde7;min-width:100px}
+
+  /* Toast */
+  .toast{position:fixed;bottom:20px;right:20px;background:#333;color:#fff;padding:10px 20px;border-radius:8px;font-size:13px;z-index:2000;opacity:0;transition:opacity .3s;pointer-events:none}
+  .toast.show{opacity:1}
+
+  /* Collapsed */
+  .collapsed-row{display:none}
+  tr.grp .toggle-icon{float:right;font-size:11px;color:#1565c0}
+</style>
+</head>
+<body>
+
+<h1>Шаблон <code>windows_custom</code> — аудит элементов</h1>
+<p class="meta">Zabbix 8.0 LTS, официальный шаблон Windows (passive-вариант) + ручные отключения. Интерактивная версия с сохранением в localStorage.</p>
+
+<div class="toolbar">
+  <input type="text" id="searchInput" placeholder="🔍 Поиск по имени, ключу, примечанию...">
+  <select id="statusFilter">
+    <option value="all">Все статусы</option>
+    <option value="active">Активные</option>
+    <option value="disabled">Отключённые</option>
+  </select>
+  <select id="typeFilter">
+    <option value="all">Все типы</option>
+    <option value="агент">Агент</option>
+    <option value="internal">Internal</option>
+    <option value="зависимый">Зависимый</option>
+  </select>
+  <button class="btn btn-add" onclick="openAddModal()">+ Добавить элемент</button>
+  <button class="btn btn-export" onclick="exportJSON()">📥 Экспорт JSON</button>
+  <button class="btn btn-import" onclick="document.getElementById('importFile').click()">📤 Импорт JSON</button>
+  <input type="file" id="importFile" accept=".json" style="display:none" onchange="importJSON(event)">
+  <button class="btn btn-reset" onclick="resetData()">↺ Сброс</button>
+</div>
+
+<div class="flags" id="flagsBlock"><b>Находки аудита:</b>
+<ul>
+<li>Цепочка TPM в экспорте <b>включена</b> (мастер + 6 элементов + триггер) — сверь с фактическим состоянием.</li>
+<li>Мастера отключённых обнаружений (BitLocker, Scheduled tasks) <b>включены</b> — пустой WMI-опрос каждые 30m; рекомендуется погасить.</li>
+<li>Все прямые элементы — <b>пассивные</b> проверки (тип Zabbix agent); active-вариант шаблона не использован.</li>
+</ul></div>
+
+<div class="summary" id="summaryCards"></div>
+
+<p class="legend">Условные обозначения: <span class="on">АКТИВЕН</span> <span class="off">ОТКЛЮЧЁН</span> · <span class="master">МАСТЕР</span> — сырой источник данных · <span class="dep">зависимый</span> — питается от мастера · <span class="trg">⚑ триггер</span> — элемент участвует в триггере. <br><em>Кликните на статус для переключения, на примечание — для редактирования.</em></p>
+
+<div id="content"></div>
+
+<p class="meta" style="margin-top:24px;border-top:1px solid #ddd;padding-top:12px">
+Конец аудита. Интервал «—» у зависимых элементов означает отсутствие собственного опроса (значение приходит от мастера). Данные сохраняются автоматически в localStorage.
+</p>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <h3 id="modalTitle">Добавить элемент</h3>
+    <form id="itemForm" onsubmit="return saveItem(event)">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Секция</label>
+          <select id="fSection" onchange="updateGroupOptions()">
+            <option value="template">Элементы уровня шаблона</option>
+            <option value="prototype">Прототипы элементов</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Группа</label>
+          <select id="fGroup"></select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Имя элемента *</label>
+        <input type="text" id="fName" required placeholder="Например: CPU temperature">
+      </div>
+      <div class="form-group">
+        <label>Ключ *</label>
+        <input type="text" id="fKey" required placeholder="Например: perf_counter_en[...]">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Тип</label>
+          <select id="fType">
+            <option value="агент">агент</option>
+            <option value="internal">internal</option>
+            <option value="зависимый">зависимый</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Интервал</label>
+          <input type="text" id="fInterval" value="1m">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Примечание</label>
+        <textarea id="fNote" placeholder="Описание элемента..."></textarea>
+      </div>
+      <div class="checkbox-row">
+        <label><input type="checkbox" id="fMaster"> Мастер (raw-источник)</label>
+        <label><input type="checkbox" id="fTrigger"> Есть триггер</label>
+        <label><input type="checkbox" id="fDisabled"> Отключён</label>
+      </div>
+      <div class="form-group" id="triggerNoteGroup" style="display:none">
+        <label>Описание триггера</label>
+        <input type="text" id="fTriggerNote" placeholder="Например: высокая температура (WARN)">
+      </div>
+      <input type="hidden" id="fEditId" value="">
+      <div class="modal-actions">
+        <button type="button" class="btn btn-reset" onclick="closeModal()">Отмена</button>
+        <button type="submit" class="btn btn-add">Сохранить</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ===== DATA =====
+const initialData = [
+  {
+    id: 'template', title: '1. Элементы уровня шаблона',
+    groups: [
+      { id: 'raw', name: 'Сырьё (мастера), тег component: raw', items: [
+        { id:'t1', name:'Windows updates: Get installed KBs', key:'wmi.getall[root\\cimv2,"select … from Win32_QuickFixEngineering"]', type:'агент', interval:'1h', status:'active', note:'МАСТЕР для цепочки обновлений', isMaster:true },
+        { id:'t2', name:'Windows activation: Get product info', key:'wmi.getall[root\\CIMV2,"select … from SoftwareLicensingProduct …"]', type:'агент', interval:'12h', status:'active', note:'МАСТЕР активации (продукт)', isMaster:true },
+        { id:'t3', name:'Windows activation: Get service info', key:'wmi.getall[root\\CIMV2,"select … from SoftwareLicensingService"]', type:'агент', interval:'12h', status:'active', note:'МАСТЕР активации (KMS-сервис)', isMaster:true },
+        { id:'t4', name:'Windows: Network interfaces WMI get', key:'wmi.getall[root\\cimv2,"select … from win32_networkadapter …"]', type:'агент', interval:'1m', status:'active', note:'МАСТЕР сетевых интерфейсов', isMaster:true },
+        { id:'t5', name:'Windows TPM: Get info', key:'wmi.getall[root\\CIMV2\\Security\\MicrosoftTpm,"select … from Win32_Tpm"]', type:'агент', interval:'1h', status:'active', note:'МАСТЕР TPM; цепочка не погашена в экспорте', isMaster:true },
+        { id:'t6', name:'Windows BitLocker: Get encryptable volumes', key:'wmi.getall[root\\CIMV2\\Security\\MicrosoftVolumeEncryption,"select …"]', type:'агент', interval:'30m', status:'active', note:'МАСТЕР; LLD отключён → рекомендуется погасить', isMaster:true },
+        { id:'t7', name:'Windows Defender: Get status', key:'wmi.getall[root\\Microsoft\\Windows\\Defender,"select … from MSFT_MpComputerStatus"]', type:'агент', interval:'30m', status:'active', note:'МАСТЕР Defender', isMaster:true },
+        { id:'t8', name:'Windows scheduled tasks: Get tasks', key:'wmi.getall[root\\Microsoft\\Windows\\TaskScheduler,"select … from MSFT_ScheduledTask"]', type:'агент', interval:'30m', status:'active', note:'МАСТЕР; LLD отключён → рекомендуется погасить', isMaster:true },
+        { id:'t9', name:'Windows Firewall: Get profiles', key:'wmi.getall[root\\StandardCimv2,"select … from MSFT_NetFirewallProfile"]', type:'агент', interval:'30m', status:'active', note:'МАСТЕР профилей фаервола', isMaster:true },
+      ]},
+      { id:'system', name:'Система и агент (component: system / application)', items: [
+        { id:'t10', name:'Host name of Zabbix agent running', key:'agent.hostname', type:'агент', interval:'1h', status:'active', note:'имя хоста глазами агента' },
+        { id:'t11', name:'Zabbix agent ping', key:'agent.ping', type:'агент', interval:'1m', status:'active', note:'доступность агента (ping)' },
+        { id:'t12', name:'Version of Zabbix agent running', key:'agent.version', type:'агент', interval:'1h', status:'active', note:'версия агента' },
+        { id:'t13', name:'System name', key:'system.hostname', type:'агент', interval:'1h', status:'active', note:'inventory: NAME', hasTrigger:true, triggerNote:'имя изменилось (INFO)' },
+        { id:'t14', name:'System local time', key:'system.localtime[local]', type:'агент', interval:'1m', status:'active', note:'локальное время (виджет часов)' },
+        { id:'t15', name:'System description', key:'system.uname', type:'агент', interval:'15m', status:'active', note:'описание системы (шапка дашборда)' },
+        { id:'t16', name:'Uptime', key:'system.uptime', type:'агент', interval:'30s', status:'active', note:'', hasTrigger:true, triggerNote:'перезагрузка (WARN)' },
+        { id:'t17', name:'Zabbix agent availability', key:'zabbix[host,agent,available]', type:'internal', interval:'1m', status:'active', note:'только для пассивных агентов', hasTrigger:true, triggerNote:'агент недоступен (AVG)' },
+      ]},
+      { id:'cpu', name:'Процессор (component: cpu)', items: [
+        { id:'t18', name:'CPU utilization', key:'system.cpu.util', type:'агент', interval:'1m', status:'active', note:'', hasTrigger:true, triggerNote:'высокая утилизация (WARN)' },
+        { id:'t19', name:'Number of cores', key:'wmi.get[root/cimv2,"Select NumberOfLogicalProcessors …"]', type:'агент', interval:'1m', status:'active', note:'логические ядра; участвует в триггере очереди' },
+        { id:'t20', name:'CPU user time', key:'perf_counter_en["\\Processor Information(_total)\\% User Time"]', type:'агент', interval:'1m', status:'active', note:'user-время' },
+        { id:'t21', name:'CPU privileged time', key:'perf_counter_en["\\Processor Information(_total)\\% Privileged Time"]', type:'агент', interval:'1m', status:'active', note:'', hasTrigger:true, triggerNote:'privileged high (WARN)' },
+        { id:'t22', name:'CPU interrupt time', key:'perf_counter_en["\\Processor Information(_total)\\% Interrupt Time"]', type:'агент', interval:'1m', status:'active', note:'', hasTrigger:true, triggerNote:'interrupt high (WARN)' },
+        { id:'t23', name:'CPU DPC time', key:'perf_counter_en["\\Processor Information(_total)\\% DPC Time"]', type:'агент', interval:'1m', status:'active', note:'DPC-время' },
+        { id:'t24', name:'CPU queue length', key:'perf_counter_en["\\System\\Processor Queue Length"]', type:'агент', interval:'1m', status:'active', note:'', hasTrigger:true, triggerNote:'очередь слишком длинная (WARN, шабл. уровень)' },
+        { id:'t25', name:'Context switches per second', key:'perf_counter_en["\\System\\Context Switches/sec"]', type:'агент', interval:'1m', status:'active', note:'переключения контекста' },
+      ]},
+      { id:'memory', name:'Память и подкачка (component: memory / storage)', items: [
+        { id:'t26', name:'Memory utilization', key:'vm.memory.size[pused]', type:'агент', interval:'1m', status:'active', note:'', hasTrigger:true, triggerNote:'высокая утилизация (AVG)' },
+        { id:'t27', name:'Total memory', key:'vm.memory.size[total]', type:'агент', interval:'1m', status:'active', note:'всего ОЗУ' },
+        { id:'t28', name:'Used memory', key:'vm.memory.size[used]', type:'агент', interval:'1m', status:'active', note:'занято ОЗУ' },
+        { id:'t29', name:'Cache bytes', key:'perf_counter_en["\\Memory\\Cache Bytes"]', type:'агент', interval:'1m', status:'active', note:'кэш' },
+        { id:'t30', name:'Free system page table entries', key:'perf_counter_en["\\Memory\\Free System Page Table Entries"]', type:'агент', interval:'1m', status:'active', note:'', hasTrigger:true, triggerNote:'мало записей таблиц страниц (WARN)' },
+        { id:'t31', name:'Memory page faults per second', key:'perf_counter_en["\\Memory\\Page Faults/sec"]', type:'агент', interval:'1m', status:'active', note:'page faults' },
+        { id:'t32', name:'Memory pages per second', key:'perf_counter_en["\\Memory\\Pages/sec"]', type:'агент', interval:'1m', status:'active', note:'', hasTrigger:true, triggerNote:'Pages/sec high (WARN)' },
+        { id:'t33', name:'Memory pool non-paged', key:'perf_counter_en["\\Memory\\Pool Nonpaged Bytes"]', type:'агент', interval:'1m', status:'active', note:'non-paged pool' },
+        { id:'t34', name:'Used swap space in %', key:'perf_counter_en["\\Paging file(_Total)\\% Usage"]', type:'агент', interval:'1m', status:'active', note:'МАСТЕР для swap.pfree', isMaster:true },
+        { id:'t35', name:'Free swap space in %', key:'system.swap.pfree', type:'зависимый', interval:'—', status:'active', note:'', hasTrigger:true, triggerNote:'high swap usage (WARN, шабл. уровень)' },
+        { id:'t36', name:'Free swap space', key:'system.swap.size[,free]', type:'агент', interval:'1m', status:'active', note:'свободно подкачки' },
+        { id:'t37', name:'Total swap space', key:'system.swap.size[,total]', type:'агент', interval:'1m', status:'active', note:'всего подкачки' },
+      ]},
+      { id:'os', name:'ОС и обновления (component: os)', items: [
+        { id:'t38', name:'Operating system', key:'system.sw.os', type:'агент', interval:'1h', status:'active', note:'inventory: OS', hasTrigger:true, triggerNote:'ОС изменилась (INFO)' },
+        { id:'t39', name:'Operating system architecture', key:'system.sw.arch', type:'агент', interval:'1h', status:'active', note:'архитектура ОС' },
+        { id:'t40', name:'Number of processes', key:'proc.num[]', type:'агент', interval:'1m', status:'active', note:'число процессов' },
+        { id:'t41', name:'Number of threads', key:'perf_counter_en["\\System\\Threads"]', type:'агент', interval:'1m', status:'active', note:'число потоков' },
+        { id:'t42', name:'Windows updates: Days since last KB', key:'updates.kb.days', type:'зависимый', interval:'—', status:'active', note:'', hasTrigger:true, triggerNote:'давно нет KB (WARN)' },
+        { id:'t43', name:'Windows updates: Last KB install date', key:'updates.kb.last.date', type:'зависимый', interval:'—', status:'active', note:'дата последнего KB' },
+        { id:'t44', name:'Windows updates: Last KB ID', key:'updates.kb.last.id', type:'зависимый', interval:'—', status:'active', note:'ID последнего KB' },
+        { id:'t45', name:'Windows updates: KBs installed (total)', key:'updates.kb.total', type:'зависимый', interval:'—', status:'active', note:'всего KB' },
+        { id:'t46', name:'Windows updates: Security KBs installed', key:'updates.kb.security', type:'зависимый', interval:'—', status:'active', note:'всего security KB' },
+        { id:'t47', name:'Windows updates: Days since last Security KB', key:'updates.security.days', type:'зависимый', interval:'—', status:'active', note:'', hasTrigger:true, triggerNote:'давно нет security KB (AVG)' },
+        { id:'t48', name:'Windows updates: Last Security KB install date', key:'updates.security.last.date', type:'зависимый', interval:'—', status:'active', note:'дата последнего security KB' },
+      ]},
+      { id:'security-activation', name:'Безопасность: активация (component: security)', items: [
+        { id:'t49', name:'Windows activation: License status', key:'activation.license.status', type:'зависимый', interval:'—', status:'active', note:'', hasTrigger:true, triggerNote:'не лицензировано (WARN)' },
+        { id:'t50', name:'Windows activation: Grace period remaining', key:'activation.grace', type:'зависимый', interval:'—', status:'active', note:'', hasTrigger:true, triggerNote:'grace-период истекает (WARN)' },
+        { id:'t51', name:'Windows activation: Product name', key:'activation.product.name', type:'зависимый', interval:'—', status:'active', note:'имя продукта' },
+        { id:'t52', name:'Windows activation: Partial product key', key:'activation.product.key', type:'зависимый', interval:'—', status:'active', note:'последние 5 символов ключа' },
+        { id:'t53', name:'Windows activation: Client machine ID', key:'activation.client.id', type:'зависимый', interval:'—', status:'active', note:'KMS client ID' },
+        { id:'t54', name:'Windows activation: KMS server', key:'activation.kms.server', type:'зависимый', interval:'—', status:'active', note:'KMS-сервер' },
+        { id:'t55', name:'Windows activation: KMS port', key:'activation.kms.port', type:'зависимый', interval:'—', status:'active', note:'порт KMS' },
+        { id:'t56', name:'Windows activation: Is KMS host', key:'activation.kms.host', type:'зависимый', interval:'—', status:'active', note:'является ли KMS-хостом' },
+        { id:'t57', name:'Windows activation: Status reason code', key:'activation.status.reason', type:'зависимый', interval:'—', status:'active', note:'код причины статуса' },
+      ]},
+      { id:'security-defender', name:'Безопасность: Defender / SecureBoot / TPM / фаервол-мастер (component: security)', items: [
+        { id:'t58', name:'Windows Defender: AM service enabled', key:'defender.amservice.enabled', type:'зависимый', interval:'—', status:'active', note:'служба AM' },
+        { id:'t59', name:'Windows Defender: Antivirus enabled', key:'defender.av.enabled', type:'зависимый', interval:'—', status:'active', note:'антивирус' },
+        { id:'t60', name:'Windows Defender: Antispyware enabled', key:'defender.as.enabled', type:'зависимый', interval:'—', status:'active', note:'антиспайвар' },
+        { id:'t61', name:'Windows Defender: Real-time protection enabled', key:'defender.rtp.enabled', type:'зависимый', interval:'—', status:'active', note:'', hasTrigger:true, triggerNote:'RTP выключена (AVG)' },
+        { id:'t62', name:'Windows Defender: Antivirus signature age', key:'defender.av.signature.age', type:'зависимый', interval:'—', status:'active', note:'', hasTrigger:true, triggerNote:'сигнатуры устарели (WARN)' },
+        { id:'t63', name:'Windows Defender: Antispyware signature age', key:'defender.as.signature.age', type:'зависимый', interval:'—', status:'active', note:'возраст сигнатур AS' },
+        { id:'t64', name:'Windows Defender: Antivirus signature version', key:'defender.av.signature.version', type:'зависимый', interval:'—', status:'active', note:'версия сигнатур' },
+        { id:'t65', name:'Windows Defender: Full scan age', key:'defender.fullscan.age', type:'зависимый', interval:'—', status:'active', note:'', hasTrigger:true, triggerNote:'полный скан просрочен (WARN)' },
+        { id:'t66', name:'Windows Defender: Quick scan age', key:'defender.quickscan.age', type:'зависимый', interval:'—', status:'active', note:'возраст быстрого скана' },
+        { id:'t67', name:'Windows SecureBoot: State', key:'registry.data[HKEY_LOCAL_MACHINE\\…\\SecureBoot\\State,UEFISecureBootEnabled]', type:'агент', interval:'1h', status:'active', note:'', hasTrigger:true, triggerNote:'SecureBoot выключен (WARN)' },
+        { id:'t68', name:'Windows TPM: Presence', key:'tpm.presence', type:'зависимый', interval:'—', status:'active', note:'', hasTrigger:true, triggerNote:'TPM отсутствует (INFO)' },
+        { id:'t69', name:'Windows TPM: Activated', key:'tpm.activated', type:'зависимый', interval:'—', status:'active', note:'TPM активирован' },
+        { id:'t70', name:'Windows TPM: Enabled', key:'tpm.enabled', type:'зависимый', interval:'—', status:'active', note:'TPM включён' },
+        { id:'t71', name:'Windows TPM: Owned', key:'tpm.owned', type:'зависимый', interval:'—', status:'active', note:'TPM имеет владельца' },
+        { id:'t72', name:'Windows TPM: Spec version', key:'tpm.spec.version', type:'зависимый', interval:'—', status:'active', note:'версия спецификации' },
+        { id:'t73', name:'Windows TPM: Manufacturer version', key:'tpm.manufacturer.version', type:'зависимый', interval:'—', status:'active', note:'версия прошивки' },
+      ]}
+    ]
+  },
+  {
+    id: 'prototype', title: '2. Прототипы элементов (по правилам обнаружения)',
+    groups: [
+      { id:'lld-fs', name:'LLD: Mounted filesystem discovery — vfs.fs.get[short] · правило АКТИВНО', items: [
+        { id:'p1', name:'FS [{#FSLABEL}({#FSNAME})]: Get data', key:'vfs.fs.get[full,{#FSNAME}]', type:'агент', interval:'1m', status:'active', note:'МАСТЕР на каждый том', isMaster:true },
+        { id:'p2', name:'FS […]: Space: Available', key:'vfs.fs.dependent.size[{#FSNAME},free]', type:'зависимый', interval:'—', status:'active', note:'свободно, Б' },
+        { id:'p3', name:'FS […]: Space: Available, in %', key:'vfs.fs.dependent.size[{#FSNAME},pfree]', type:'зависимый', interval:'—', status:'active', note:'свободно, %' },
+        { id:'p4', name:'FS […]: Space: Used, in %', key:'vfs.fs.dependent.size[{#FSNAME},pused]', type:'зависимый', interval:'—', status:'active', note:'', hasTrigger:true, triggerNote:'мало / критически мало места (WARN/AVG)' },
+        { id:'p5', name:'FS […]: Space: Total', key:'vfs.fs.dependent.size[{#FSNAME},total]', type:'зависимый', interval:'—', status:'active', note:'всего, Б' },
+        { id:'p6', name:'FS […]: Space: Used', key:'vfs.fs.dependent.size[{#FSNAME},used]', type:'зависимый', interval:'—', status:'active', note:'занято, Б' },
+      ]},
+      { id:'lld-disk', name:'LLD: Physical disks discovery — perf_instance_en.discovery[PhysicalDisk] · правило АКТИВНО', items: [
+        { id:'p7', name:'{#DEVNAME}: Disk utilization by idle time', key:'perf_counter_en["\\PhysicalDisk({#DEVNAME})\\% Idle Time",60]', type:'агент', interval:'1m', status:'active', note:'', hasTrigger:true, triggerNote:'диск перегружен (WARN)' },
+        { id:'p8', name:'{#DEVNAME}: Disk read rate', key:'perf_counter_en["\\PhysicalDisk({#DEVNAME})\\Disk Reads/sec",60]', type:'агент', interval:'1m', status:'active', note:'чтений/с' },
+        { id:'p9', name:'{#DEVNAME}: Disk write rate', key:'perf_counter_en["\\PhysicalDisk({#DEVNAME})\\Disk Writes/sec",60]', type:'агент', interval:'1m', status:'active', note:'записей/с' },
+        { id:'p10', name:'{#DEVNAME}: Disk read request avg waiting time', key:'perf_counter_en["\\PhysicalDisk({#DEVNAME})\\Avg. Disk sec/Read",60]', type:'агент', interval:'1m', status:'active', note:'', hasTrigger:true, triggerNote:'отклик чтения высокий (WARN)' },
+        { id:'p11', name:'{#DEVNAME}: Disk write request avg waiting time', key:'perf_counter_en["\\PhysicalDisk({#DEVNAME})\\Avg. Disk sec/Write",60]', type:'агент', interval:'1m', status:'active', note:'', hasTrigger:true, triggerNote:'отклик записи высокий (WARN)' },
+        { id:'p12', name:'{#DEVNAME}: Average disk read queue length', key:'perf_counter_en["\\PhysicalDisk({#DEVNAME})\\Avg. Disk Read Queue Length",60]', type:'агент', interval:'1m', status:'active', note:'очередь чтения' },
+        { id:'p13', name:'{#DEVNAME}: Average disk write queue length', key:'perf_counter_en["\\PhysicalDisk({#DEVNAME})\\Avg. Disk Write Queue Length",60]', type:'агент', interval:'1m', status:'active', note:'очередь записи' },
+        { id:'p14', name:'{#DEVNAME}: Disk average queue size (avgqu-sz)', key:'perf_counter_en["\\PhysicalDisk({#DEVNAME})\\Current Disk Queue Length",60]', type:'агент', interval:'1m', status:'active', note:'текущая очередь' },
+      ]},
+      { id:'lld-net', name:'LLD: Network interfaces discovery · правило АКТИВНО', items: [
+        { id:'p15', name:'Interface {#IFNAME}({#IFALIAS}): Bits received', key:'net.if.in["{#IFGUID}"]', type:'агент', interval:'3m', status:'active', note:'входящий трафик' },
+        { id:'p16', name:'Interface {#IFNAME}({#IFALIAS}): Bits sent', key:'net.if.out["{#IFGUID}"]', type:'агент', interval:'3m', status:'active', note:'исходящий трафик' },
+        { id:'p17', name:'Interface …: Inbound packets discarded', key:'net.if.in["{#IFGUID}",dropped]', type:'агент', interval:'3m', status:'active', note:'входящие отброшенные' },
+        { id:'p18', name:'Interface …: Inbound packets with errors', key:'net.if.in["{#IFGUID}",errors]', type:'агент', interval:'3m', status:'active', note:'', hasTrigger:true, triggerNote:'высокий error rate (WARN, уровень правила)' },
+        { id:'p19', name:'Interface …: Outbound packets discarded', key:'net.if.out["{#IFGUID}",dropped]', type:'агент', interval:'3m', status:'active', note:'исходящие отброшенные' },
+        { id:'p20', name:'Interface …: Outbound packets with errors', key:'net.if.out["{#IFGUID}",errors]', type:'агент', interval:'3m', status:'active', note:'', hasTrigger:true, triggerNote:'высокий error rate (WARN, уровень правила)' },
+        { id:'p21', name:'Interface …: Speed', key:'net.if.speed["{#IFGUID}"]', type:'зависимый', interval:'—', status:'active', note:'', hasTrigger:true, triggerNote:'скорость упала (INFO, уровень правила)' },
+        { id:'p22', name:'Interface …: Operational status', key:'net.if.status["{#IFGUID}"]', type:'зависимый', interval:'—', status:'active', note:'', hasTrigger:true, triggerNote:'link down (AVG)' },
+        { id:'p23', name:'Interface …: Interface type', key:'net.if.type["{#IFGUID}"]', type:'зависимый', interval:'—', status:'active', note:'тип интерфейса' },
+      ]},
+      { id:'lld-fw', name:'LLD: Windows Firewall profiles discovery · правило АКТИВНО', items: [
+        { id:'p24', name:'Windows Firewall [{#FW.PROFILE}]: Enabled', key:'firewall.enabled["{#FW.PROFILE}"]', type:'зависимый', interval:'—', status:'active', note:'', hasTrigger:true, triggerNote:'профиль выключен (WARN)' },
+        { id:'p25', name:'Windows Firewall [{#FW.PROFILE}]: Default inbound action', key:'firewall.inbound["{#FW.PROFILE}"]', type:'зависимый', interval:'—', status:'active', note:'действие по умолчанию (вход)' },
+        { id:'p26', name:'Windows Firewall [{#FW.PROFILE}]: Default outbound action', key:'firewall.outbound["{#FW.PROFILE}"]', type:'зависимый', interval:'—', status:'active', note:'действие по умолчанию (выход)' },
+      ]},
+      { id:'lld-bl', name:'LLD: Windows BitLocker volume discovery · правило ОТКЛЮЧЕНО', items: [
+        { id:'p27', name:'BitLocker [{#FSNAME}]: Conversion status', key:'bitlocker.conversion["{#FSNAME}"]', type:'зависимый', interval:'—', status:'disabled', note:'статус конверсии' },
+        { id:'p28', name:'BitLocker [{#FSNAME}]: Encryption method', key:'bitlocker.method["{#FSNAME}"]', type:'зависимый', interval:'—', status:'disabled', note:'метод шифрования' },
+        { id:'p29', name:'BitLocker [{#FSNAME}]: Protection status', key:'bitlocker.protection["{#FSNAME}"]', type:'зависимый', interval:'—', status:'disabled', note:'', hasTrigger:true, triggerNote:'(откл.) защита не включена на enforced-томе' },
+      ]},
+      { id:'lld-svc', name:'LLD: Windows services discovery · правило ОТКЛЮЧЕНО', items: [
+        { id:'p30', name:'State of service "{#SERVICE.NAME}" ({#SERVICE.DISPLAYNAME})', key:'service.info["{#SERVICE.NAME}",state]', type:'агент', interval:'1m', status:'disabled', note:'', hasTrigger:true, triggerNote:'(откл.) не запущена / не должна работать' },
+      ]},
+      { id:'lld-tasks', name:'LLD: Windows scheduled tasks discovery · правило ОТКЛЮЧЕНО', items: [
+        { id:'p31', name:'Scheduled task [{#TASK.PATH}{#TASK.NAME}]: State', key:'task.state["{#TASK.URI}"]', type:'зависимый', interval:'—', status:'disabled', note:'', hasTrigger:true, triggerNote:'(откл.) задача выключена' },
+      ]}
+    ]
+  }
+];
+
+// ===== STATE =====
+const STORAGE_KEY = 'zabbix-audit-data';
+let data = loadData();
+let collapsedGroups = new Set();
+
+function loadData() {
+  try {
+    const s = localStorage.getItem(STORAGE_KEY);
+    if (s) return JSON.parse(s);
+  } catch(e) {}
+  return JSON.parse(JSON.stringify(initialData));
+}
+
+function saveData() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+
+function genId() {
+  return 'item_' + Date.now() + '_' + Math.random().toString(36).substr(2,9);
+}
+
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+// ===== FILTERS =====
+function getFilters() {
+  return {
+    search: document.getElementById('searchInput').value.toLowerCase(),
+    status: document.getElementById('statusFilter').value,
+    type: document.getElementById('typeFilter').value
+  };
+}
+
+function matchItem(item, filters) {
+  if (filters.status !== 'all' && item.status !== filters.status) return false;
+  if (filters.type !== 'all' && item.type !== filters.type) return false;
+  if (filters.search) {
+    const q = filters.search;
+    return item.name.toLowerCase().includes(q) || item.key.toLowerCase().includes(q) || item.note.toLowerCase().includes(q);
+  }
+  return true;
+}
+
+// ===== RENDER =====
+function render() {
+  const filters = getFilters();
+  const container = document.getElementById('content');
+  let html = '';
+
+  data.forEach((section, sIdx) => {
+    html += `<h2>${escHtml(section.title)}</h2>`;
+    section.groups.forEach((group, gIdx) => {
+      const filtered = group.items.filter(i => matchItem(i, filters));
+      if (filtered.length === 0 && (filters.search || filters.status !== 'all' || filters.type !== 'all')) return;
+      
+      const isCollapsed = collapsedGroups.has(section.id + ':' + group.id);
+      html += `<table>`;
+      html += `<tr class="grp" onclick="toggleCollapse('${section.id}','${group.id}')">
+        <td colspan="7">${escHtml(group.name)} <span class="toggle-icon">${isCollapsed ? '▶' : '▼'} (${filtered.length})</span></td>
+      </tr>`;
+      
+      if (!isCollapsed) {
+        html += `<tr style="background:#2c3e50;color:#fff"><th style="width:22%">Имя</th><th style="width:32%">Ключ</th><th style="width:8%">Тип</th><th style="width:6%">Интервал</th><th style="width:9%">Статус</th><th>Примечание</th><th style="width:6%">⚙</th></tr>`;
+        filtered.forEach(item => {
+          const statusCls = item.status === 'active' ? 'on' : 'off';
+          const statusTxt = item.status === 'active' ? 'АКТИВЕН' : 'ОТКЛЮЧЁН';
+          const typeHtml = item.type === 'зависимый' ? '<span class="dep">зависимый</span>' : escHtml(item.type);
+          let noteHtml = '';
+          if (item.isMaster) noteHtml += '<span class="master">МАСТЕР</span> ';
+          if (item.hasTrigger) noteHtml += '<span class="trg">⚑ ' + escHtml(item.triggerNote || '') + '</span> ';
+          noteHtml += escHtml(item.note || '');
+          if (!noteHtml.trim()) noteHtml = '<span style="color:#ccc">—</span>';
+
+          html += `<tr>
+            <td>${escHtml(item.name)}</td>
+            <td class="key">${escHtml(item.key)}</td>
+            <td>${typeHtml}</td>
+            <td>${escHtml(item.interval)}</td>
+            <td><span class="${statusCls}" onclick="toggleStatus('${section.id}','${group.id}','${item.id}')">${statusTxt}</span></td>
+            <td><span class="note-cell" onclick="editNote('${section.id}','${group.id}','${item.id}', this)">${noteHtml}</span></td>
+            <td style="text-align:center;white-space:nowrap">
+              <button class="btn-edit" onclick="editItem('${section.id}','${group.id}','${item.id}')" title="Редактировать">✏️</button>
+              <button class="btn-del" onclick="deleteItem('${section.id}','${group.id}','${item.id}')" title="Удалить">🗑</button>
+            </td>
+          </tr>`;
+        });
+      }
+      html += `</table>`;
+    });
+  });
+
+  container.innerHTML = html;
+  updateSummary();
+}
+
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
+}
+
+function updateSummary() {
+  let tA=0,tD=0,pA=0,pD=0,masters=0;
+  data.forEach(s => {
+    s.groups.forEach(g => {
+      g.items.forEach(i => {
+        if(i.isMaster) masters++;
+        if(s.id==='template') { if(i.status==='active') tA++; else tD++; }
+        else { if(i.status==='active') pA++; else pD++; }
+      });
+    });
+  });
+  document.getElementById('summaryCards').innerHTML = `
+    <div class="card"><b>${tA+tD}</b>элементов шаблона (${tA} акт. / ${tD} откл.)</div>
+    <div class="card"><b>${pA+pD}</b>прототипов (${pA} акт. / ${pD} откл.)</div>
+    <div class="card"><b>${masters}</b>мастеров (raw-слой)</div>
+  `;
+}
+
+// ===== ACTIONS =====
+function findItem(sectionId, groupId, itemId) {
+  const s = data.find(s => s.id === sectionId);
+  if(!s) return null;
+  const g = s.groups.find(g => g.id === groupId);
+  if(!g) return null;
+  const i = g.items.find(i => i.id === itemId);
+  return i ? { section:s, group:g, item:i } : null;
+}
+
+function toggleStatus(sectionId, groupId, itemId) {
+  const f = findItem(sectionId, groupId, itemId);
+  if(!f) return;
+  f.item.status = f.item.status === 'active' ? 'disabled' : 'active';
+  saveData();
+  render();
+  toast('Статус изменён: ' + (f.item.status === 'active' ? 'АКТИВЕН' : 'ОТКЛЮЧЁН'));
+}
+
+function deleteItem(sectionId, groupId, itemId) {
+  if(!confirm('Удалить этот элемент?')) return;
+  const f = findItem(sectionId, groupId, itemId);
+  if(!f) return;
+  f.group.items = f.group.items.filter(i => i.id !== itemId);
+  saveData();
+  render();
+  toast('Элемент удалён');
+}
+
+function editNote(sectionId, groupId, itemId, cell) {
+  const f = findItem(sectionId, groupId, itemId);
+  if(!f) return;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'note-edit';
+  input.value = f.item.note;
+  cell.innerHTML = '';
+  cell.appendChild(input);
+  input.focus();
+  input.select();
+  
+  const save = () => {
+    f.item.note = input.value;
+    saveData();
+    render();
+    toast('Примечание обновлено');
+  };
+  input.addEventListener('blur', save);
+  input.addEventListener('keydown', e => { if(e.key==='Enter') save(); if(e.key==='Escape') render(); });
+}
+
+function toggleCollapse(sectionId, groupId) {
+  const key = sectionId + ':' + groupId;
+  if(collapsedGroups.has(key)) collapsedGroups.delete(key);
+  else collapsedGroups.add(key);
+  render();
+}
+
+// ===== MODAL =====
+function openAddModal() {
+  document.getElementById('modalTitle').textContent = 'Добавить элемент';
+  document.getElementById('fEditId').value = '';
+  document.getElementById('fName').value = '';
+  document.getElementById('fKey').value = '';
+  document.getElementById('fType').value = 'агент';
+  document.getElementById('fInterval').value = '1m';
+  document.getElementById('fNote').value = '';
+  document.getElementById('fMaster').checked = false;
+  document.getElementById('fTrigger').checked = false;
+  document.getElementById('fDisabled').checked = false;
+  document.getElementById('fTriggerNote').value = '';
+  document.getElementById('triggerNoteGroup').style.display = 'none';
+  updateGroupOptions();
+  document.getElementById('modalOverlay').classList.add('active');
+}
+
+function editItem(sectionId, groupId, itemId) {
+  const f = findItem(sectionId, groupId, itemId);
+  if(!f) return;
+  document.getElementById('modalTitle').textContent = 'Редактировать элемент';
+  document.getElementById('fEditId').value = itemId;
+  document.getElementById('fSection').value = sectionId;
+  updateGroupOptions();
+  document.getElementById('fGroup').value = groupId;
+  document.getElementById('fName').value = f.item.name;
+  document.getElementById('fKey').value = f.item.key;
+  document.getElementById('fType').value = f.item.type;
+  document.getElementById('fInterval').value = f.item.interval;
+  document.getElementById('fNote').value = f.item.note;
+  document.getElementById('fMaster').checked = !!f.item.isMaster;
+  document.getElementById('fTrigger').checked = !!f.item.hasTrigger;
+  document.getElementById('fDisabled').checked = f.item.status === 'disabled';
+  document.getElementById('fTriggerNote').value = f.item.triggerNote || '';
+  document.getElementById('triggerNoteGroup').style.display = f.item.hasTrigger ? 'block' : 'none';
+  document.getElementById('modalOverlay').classList.add('active');
+}
+
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('active');
+}
+
+function updateGroupOptions() {
+  const sectionId = document.getElementById('fSection').value;
+  const section = data.find(s => s.id === sectionId);
+  const sel = document.getElementById('fGroup');
+  sel.innerHTML = '';
+  if(section) {
+    section.groups.forEach(g => {
+      const opt = document.createElement('option');
+      opt.value = g.id;
+      opt.textContent = g.name;
+      sel.appendChild(opt);
+    });
+  }
+}
+
+function saveItem(e) {
+  e.preventDefault();
+  const editId = document.getElementById('fEditId').value;
+  const sectionId = document.getElementById('fSection').value;
+  const groupId = document.getElementById('fGroup').value;
+  const hasTrigger = document.getElementById('fTrigger').checked;
+  
+  const itemData = {
+    name: document.getElementById('fName').value,
+    key: document.getElementById('fKey').value,
+    type: document.getElementById('fType').value,
+    interval: document.getElementById('fInterval').value,
+    note: document.getElementById('fNote').value,
+    isMaster: document.getElementById('fMaster').checked,
+    hasTrigger: hasTrigger,
+    triggerNote: hasTrigger ? document.getElementById('fTriggerNote').value : '',
+    status: document.getElementById('fDisabled').checked ? 'disabled' : 'active'
+  };
+
+  const section = data.find(s => s.id === sectionId);
+  const group = section.groups.find(g => g.id === groupId);
+
+  if(editId) {
+    const item = group.items.find(i => i.id === editId);
+    Object.assign(item, itemData);
+    toast('Элемент обновлён');
+  } else {
+    itemData.id = genId();
+    group.items.push(itemData);
+    toast('Элемент добавлен');
+  }
+
+  saveData();
+  closeModal();
+  render();
+  return false;
+}
+
+// Trigger checkbox toggle
+document.getElementById('fTrigger').addEventListener('change', function() {
+  document.getElementById('triggerNoteGroup').style.display = this.checked ? 'block' : 'none';
+});
+
+// ===== EXPORT / IMPORT =====
+function exportJSON() {
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'zabbix-audit-' + new Date().toISOString().slice(0,10) + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('JSON экспортирован');
+}
+
+function importJSON(e) {
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    try {
+      const imported = JSON.parse(ev.target.result);
+      if(Array.isArray(imported) && imported[0]?.id) {
+        data = imported;
+        saveData();
+        render();
+        toast('JSON импортирован (' + data.reduce((a,s)=>a+s.groups.reduce((b,g)=>b+g.items.length,0),0) + ' элементов)');
+      } else {
+        alert('Неверный формат файла');
+      }
+    } catch(err) {
+      alert('Ошибка чтения файла: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+}
+
+function resetData() {
+  if(!confirm('Сбросить все изменения к начальным данным?')) return;
+  data = JSON.parse(JSON.stringify(initialData));
+  localStorage.removeItem(STORAGE_KEY);
+  collapsedGroups.clear();
+  render();
+  toast('Данные сброшены');
+}
+
+// ===== EVENTS =====
+document.getElementById('searchInput').addEventListener('input', render);
+document.getElementById('statusFilter').addEventListener('change', render);
+document.getElementById('typeFilter').addEventListener('change', render);
+document.getElementById('modalOverlay').addEventListener('click', function(e) {
+  if(e.target === this) closeModal();
+});
+document.addEventListener('keydown', function(e) {
+  if(e.key === 'Escape') closeModal();
+});
+
+// ===== INIT =====
+render();
+</script>
+</body>
+</html>
